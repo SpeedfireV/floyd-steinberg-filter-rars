@@ -130,10 +130,11 @@ pixel_iteration:
 	addi s0 s0 1
 	addi s1 s1 1
 	
-	lb t0, (s0)
+	lbu t0, (s0)
 	
 	
 	ble s7 s8 load_descriptor_byte
+	bge s7 s9 end
 	j dither_pixel
 	
 	
@@ -145,80 +146,118 @@ load_descriptor_byte:
 	
 	
 dither_pixel:
-	lb t0 (s0)
-	lb t1 (s1)
-	add t0 t0 t1
+	lbu t0 (s0) # LOAD OLD IMAGE PIXEL
+	lbu t1 (s1) # LOAD NEW IMAGE PIXEL CURRENT VALUE
 	li t2 128
-	ble t0 t2 round_down
+	blt t0 t2 round_down
 
-		
 round_up:
-	li t0 255
-	sb t0 (s1)
-	j propagate_right_pixel 
+	# CALCULATE QUANT ERROR
+	mv s6 t0 
+	li t3 255
+	sub s6 s6 t3
+	# SAVE NEW PIXEL
+	sb t3 (s1)
+	j propagate_right_pixel
 
 round_down:
-	li t0 0
-	sb t0 (s1)
+	# CALCULATE QUANT ERROR
+	mv s6 t0
+	li t3 0
+	# SAVE NEW PIXEL
+	sb t3 (s1)
+	j propagate_right_pixel
+	
 
 propagate_right_pixel:
-	li t0 0
-	sub t0 t0 s8
-	add t0 t0 s7 # Current pos
-	 
+	# TODO: FIX RIGHT END
+	
+	li t0 7 # VALUE FOR MUL
+	mv t1 s6 # QUANT MULTIPLICATION REGISTER
+	mul t1 t1 t0 # MULTIPLY QUANT BY 7
 	
 	
-	mv t1 s10 # Width
-	remu t2 t0 t1 # Remainder of current pos % width
-	beqz t2 propagate_left_bottom_pixel
-	sub t2 s9 s7 # size - pos pointer
-	beqz t2 end # end if it's last element
-	# TODO: Implement
-	mv t0 s1 # Load address of new image buffer
-	addi t0 t0 1
-	lb t1 (t0) # Load current state of that byte
-	addi t1 t1 112 # Add 7/16 (112) to current state
-	sb t1 (t0) # Save to memory
+	mv t2 s0 # LOAD PIXEL POS
+	addi t2 t2 1 # CALCULATE RIGHT PIXEL POS
+	lbu t3 (t2) # LOAD RIGHT PIXEL VALUE
+	
+	
+	mv t4 t2 # COPY RIGHT PIXEL POS
+	sub t4 t4 s8 # DECREASE BY FIRST PIXEL POS
+	rem t4 t4 s10 # CALCULATE REST OF LINE
+	beqz t4 propagate_left_bottom_pixel
+	
+	
+	li t0 16
+	
+	mul t3 t3 t0 # MUL RIGHT PIXEL VALUE BY 16
+	
+	add t1 t1 t3 # SUM RIGHT PIXEL WITH QUANT
+	
+	srai t1 t1 4 # DIVIDE RESULT BY 16
+	
+	sb t1 (t2) # SAVE VALUE TO RIGHT PIXEL POS
+	
 	
 propagate_left_bottom_pixel:
-	li t0 0
-	sub t0 t0 s8 # Load first pixel pos
-	add t0 t0 s7 # Load pos pointer
-	addi t0 t0 -1 # Left
-	add t0 t0 s10 # Bottom
-	bgt t0 s9 pixel_iteration
-	mv t1 s1 # Load memory address
-	addi t1 t1 -1 # Left
-	add t1 t1 s10 # Bottom
-	lb t2 (t1) # Load from memory
-	addi t2 t2 48 # Add 3/16 
-	sb t2 (t1)
+	li t0 3 # VALUE FOR MUL
+	mv t1 s6 # QUANT MULTIPLICATION REGISTER
+	mul t1 t1 t0 # MULTIPLY QUANT BY 3
+	
+	mv t2 s0 # LOAD PIXEL POS
+	addi t2 t2 -1 # CALCULATE LEFT POS | - 1
+	add t2 t2 s10 # CALCULATE BOTTOM POS | + WIDTH
+	lbu t3 (t2) # LOAD RIGHT PIXEL VALUE
+	
+	li t0 16
+	
+	mul t3 t3 t0 # MUL PIXEL VALUE BY 16
+	
+	add t1 t1 t3 # SUM LEFT BOTTOM PIXEL WITH QUANT
+	
+	srai t1 t1 4 # DIVIDE RESULT BY 16
+	
+	sb t1 (t2) # SAVE VALUE TO LEFT BOTTOM PIXEL POS
+	
 
 propagate_bottom_pixel:
-	li t0 0
-	sub t0 t0 s8 # Load first pixel pos
-	add t0 t0 s7 # Load pos pointer
-	add t0 t0 s10 # Bottom
-	bgt t0 s9 pixel_iteration
-	mv t1 s1 # Load memory address
-	add t1 t1 s10 # Bottom
-	lb t2 (t1) # Load from memory
-	addi t2 t2 80 # Add 5/16 
-	sb t2 (t1)
+	li t0 5 # VALUE FOR MUL
+	mv t1 s6 # QUANT MULTIPLICATION REGISTER
+	mul t1 t1 t0 # MULTIPLY QUANT BY 5
+	
+	mv t2 s0 # LOAD PIXEL POS
+	add t2 t2 s10 # CALCULATE BOTTOM POS | + WIDTH
+	lbu t3 (t2) # LOAD BOTTOM PIXEL VALUE
+	
+	li t0 16
+	
+	mul t3 t3 t0 # MUL PIXEL VALUE BY 16
+	
+	add t1 t1 t3 # SUM RIGHT PIXEL WITH QUANT
+	
+	srai t1 t1 4 # DIVIDE RESULT BY 16
+	
+	sb t1 (t2) # SAVE VALUE TO LEFT BOTTOM PIXEL POS
 
 propagate_bottom_right_pixel:
-	li t0 0
-	sub t0 t0 s8 # Load first pixel pos
-	add t0 t0 s7 # Load pos pointer
-	addi t0 t0 1 # Right 
-	add t0 t0 s10 # Bottom
-	bgt t0 s9 pixel_iteration
-	mv t1 s1 # Load memory address
-	addi t1 t1 1 # Right
-	add t1 t1 s10 # Bottom
-	lb t2 (t1) # Load from memory
-	addi t2 t2 16 # Add 5/16 
-	sb t2 (t1)
+	li t0 1 # VALUE FOR MUL
+	mv t1 s6 # QUANT MULTIPLICATION REGISTER
+	mul t1 t1 t0 # MULTIPLY QUANT BY 1
+	
+	mv t2 s0 # LOAD PIXEL POS
+	add t2 t2 s10 # CALCULATE BOTTOM POS | + WIDTH
+	addi t2 t2 1 # CALCULATE RIGHT POS | + 1
+	lbu t3 (t2) # LOAD BOTTOM RIGHT PIXEL VALUE
+	
+	li t0 16
+	
+	mul t3 t3 t0 # MUL PIXEL VALUE BY 16
+	
+	add t1 t1 t3 # SUM BOTTOOM RIGHT PIXEL WITH QUANT
+	
+	srai t1 t1 4 # DIVIDE RESULT BY 16
+	
+	sb t1 (t2) # SAVE VALUE TO LEFT BOTTOM PIXEL POS
 	
 	j pixel_iteration
 
