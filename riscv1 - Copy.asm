@@ -87,6 +87,7 @@ find_new_line_loop_end:
 get_width_and_height:
     # Read width
     addi t2, s0, 18
+    lhu t3, 0(t2)
     lbu t3, 0(t2)
     lbu t4, 1(t2)
     lbu t5, 2(t2)
